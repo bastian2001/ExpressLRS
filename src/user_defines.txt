@@ -58,9 +58,9 @@
 
 ### OTHER OPTIONS: ###
 
--DAUTO_WIFI_ON_INTERVAL=60
 #-DHOME_WIFI_SSID=""
 #-DHOME_WIFI_PASSWORD=""
+-DAUTO_WIFI_ON_INTERVAL=30
 
 # Enables code for talking to a connected ESP8266 backpack on the TX module, and associated Lua params
 # The device target should enable this automatically for devices that come with this, but can be added
