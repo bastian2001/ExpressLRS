@@ -54,7 +54,7 @@ static const int32_t OpenTXsyncOffsetSafeMargin = 1000; // 100us
 /// UART Handling ///
 static const int32_t TxToHandsetBauds[] = {400000, 115200, 5250000, 3750000, 1870000, 921600, 2250000};
 uint8_t CRSFHandset::UARTcurrentBaudIdx = 6;   // only used for baud-cycling, initialized to the end so the next one we try is the first in the list
-uint32_t CRSFHandset::UARTrequestedBaud = 5250000;
+uint32_t CRSFHandset::UARTrequestedBaud = 400000;
 
 // for the UART wdt, every 1000ms we change bauds when connect is lost
 static const int UARTwdtInterval = 1000;
@@ -651,107 +651,10 @@ void ICACHE_RAM_ATTR CRSFHandset::adjustMaxPacketSize()
     DBGLN("Adjusted max packet size %u-%u", maxPacketBytes, maxPeriodBytes);
 }
 
-#if defined(PLATFORM_ESP32_S3)
 uint32_t CRSFHandset::autobaud()
 {
-    static enum { INIT, MEASURED, INVERTED } state;
-
-    if (state == MEASURED)
-    {
-        UARTinverted = !UARTinverted;
-        state = INVERTED;
-        return UARTrequestedBaud;
-    }
-    if (state == INVERTED)
-    {
-        UARTinverted = !UARTinverted;
-        state = INIT;
-    }
-
-    if (REG_GET_BIT(UART_CONF0_REG(0), UART_AUTOBAUD_EN) == 0)
-    {
-        REG_WRITE(UART_RX_FILT_REG(0), (4 << UART_GLITCH_FILT_S) | UART_GLITCH_FILT_EN); // enable, glitch filter 4
-        REG_WRITE(UART_LOWPULSE_REG(0), 4095); // reset register to max value
-        REG_WRITE(UART_HIGHPULSE_REG(0), 4095); // reset register to max value
-        REG_SET_BIT(UART_CONF0_REG(0), UART_AUTOBAUD_EN); // enable autobaud
-        return 400000;
-    }
-    if (REG_GET_BIT(UART_CONF0_REG(0), UART_AUTOBAUD_EN) && REG_READ(UART_RXD_CNT_REG(0)) < 300)
-    {
-        return 400000;
-    }
-
-    state = MEASURED;
-
-    const uint32_t low_period  = REG_READ(UART_LOWPULSE_REG(0));
-    const uint32_t high_period = REG_READ(UART_HIGHPULSE_REG(0));
-    REG_CLR_BIT(UART_CONF0_REG(0), UART_AUTOBAUD_EN); // disable autobaud
-    REG_CLR_BIT(UART_RX_FILT_REG(0), UART_GLITCH_FILT_EN); // disable glitch filtering
-
-    DBGLN("autobaud: low %d, high %d", low_period, high_period);
-    // According to the tecnnical reference
-    const int32_t calulatedBaud = UART_CLK_FREQ / (low_period + high_period + 2);
-    int32_t bestBaud = TxToHandsetBauds[0];
-    for(int i=0 ; i<ARRAY_SIZE(TxToHandsetBauds) ; i++)
-    {
-        if (abs(calulatedBaud - bestBaud) > abs(calulatedBaud - TxToHandsetBauds[i]))
-        {
-            bestBaud = TxToHandsetBauds[i];
-        }
-    }
-    return bestBaud;
+    return 400000;
 }
-#elif defined(PLATFORM_ESP32)
-uint32_t CRSFHandset::autobaud()
-{
-    static enum { INIT, MEASURED, INVERTED } state;
-
-    if (state == MEASURED) {
-        UARTinverted = !UARTinverted;
-        state = INVERTED;
-        return UARTrequestedBaud;
-    }
-    if (state == INVERTED) {
-        UARTinverted = !UARTinverted;
-        state = INIT;
-    }
-
-    if (REG_GET_BIT(UART_AUTOBAUD_REG(0), UART_AUTOBAUD_EN) == 0) {
-        REG_WRITE(UART_AUTOBAUD_REG(0), 4 << UART_GLITCH_FILT_S | UART_AUTOBAUD_EN);    // enable, glitch filter 4
-        return 400000;
-    }
-    if (REG_GET_BIT(UART_AUTOBAUD_REG(0), UART_AUTOBAUD_EN) && REG_READ(UART_RXD_CNT_REG(0)) < 300)
-    {
-        return 400000;
-    }
-
-    state = MEASURED;
-
-    auto low_period  = (int32_t)REG_READ(UART_LOWPULSE_REG(0));
-    auto high_period = (int32_t)REG_READ(UART_HIGHPULSE_REG(0));
-    REG_CLR_BIT(UART_AUTOBAUD_REG(0), UART_AUTOBAUD_EN);   // disable autobaud
-
-    DBGLN("autobaud: low %d, high %d", low_period, high_period);
-    // sample code at https://github.com/espressif/esp-idf/issues/3336
-    // says baud rate = 80000000/min(UART_LOWPULSE_REG, UART_HIGHPULSE_REG);
-    // Based on testing use max and add 2 for lowest deviation
-    int32_t calculatedBaud = 80000000 / (max(low_period, high_period) + 3);
-    auto bestBaud = TxToHandsetBauds[0];
-    for(int TxToHandsetBaud : TxToHandsetBauds)
-    {
-        if (abs(calculatedBaud - bestBaud) > abs(calculatedBaud - (int32_t)TxToHandsetBaud))
-        {
-            bestBaud = (int32_t)TxToHandsetBaud;
-        }
-    }
-    return bestBaud;
-}
-#else
-uint32_t CRSFHandset::autobaud() {
-    UARTcurrentBaudIdx = (UARTcurrentBaudIdx + 1) % ARRAY_SIZE(TxToHandsetBauds);
-    return TxToHandsetBauds[UARTcurrentBaudIdx];
-}
-#endif
 
 bool CRSFHandset::UARTwdt()
 {
@@ -774,7 +677,7 @@ bool CRSFHandset::UARTwdt()
                 controllerConnected = false;
             }
 
-            UARTrequestedBaud = autobaud();
+            UARTrequestedBaud = 400000;
             if (UARTrequestedBaud != 0)
             {
                 DBGLN("UART WDT: Switch to: %d baud", UARTrequestedBaud);
@@ -793,10 +696,6 @@ bool CRSFHandset::UARTwdt()
                 USART1->CR1 |= USART_CR1_UE;
 #elif defined(TARGET_TX_FM30_MINI)
                 CRSFHandset::Port.begin(UARTrequestedBaud);
-                LL_GPIO_SetPinPull(GPIOA, GPIO_PIN_2, LL_GPIO_PULL_DOWN); // default is PULLUP
-                USART2->CR1 &= ~USART_CR1_UE;
-                USART2->CR2 |= USART_CR2_RXINV | USART_CR2_TXINV; //inverted
-                USART2->CR1 |= USART_CR1_UE;
 #else
                 CRSFHandset::Port.begin(UARTrequestedBaud);
 #endif

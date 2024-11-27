@@ -1244,7 +1244,7 @@ static void setupSerial()
   TxBackpack = serialPort;
 
 #if defined(PLATFORM_ESP32_S3)
-  Serial.begin(460800);
+    Serial.begin(400000);
 #endif
 
 // Setup TxUSB

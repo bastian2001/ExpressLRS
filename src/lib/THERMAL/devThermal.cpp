@@ -223,7 +223,7 @@ uint16_t getCurrentRPM()
 
 static void timeoutTacho()
 {
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) && !defined(PLATFORM_ESP32_C3)
     if (GPIO_PIN_FAN_TACHO != UNDEF_PIN)
     {
         currentRPM = get_rpm();
@@ -234,7 +234,7 @@ static void timeoutTacho()
 
 static int start()
 {
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) && !defined(PLATFORM_ESP32_C3)
     if (GPIO_PIN_FAN_PWM != UNDEF_PIN)
     {
         ledcSetup(fanChannel, 25000, 8);

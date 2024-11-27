@@ -9,7 +9,7 @@ void output_start(unsigned int baudrate __attribute__((unused)))
 void output_start(unsigned int baudrate)
 #endif
 {
-    Serial.begin(115200);
+    Serial.begin(400000);
 }
 
 void output_char(int c)
